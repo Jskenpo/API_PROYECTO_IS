@@ -1,40 +1,69 @@
 const { Pool } = require('pg');
+const {generateRSAKeys, encryptMessage, decryptMessage} = require('../Security.js');
 
 
 const pool = new Pool({
     user: 'postgres',
-    host: 'cositamiaapi.c64q2jpilfie.us-east-2.rds.amazonaws.com',
-    database: 'MediComBD',
-    password: 'ClaveRDS#1',
+    host: 'localhost',
+    password: 'ClavePOST#1',
+    database: 'Cositamia',
     port: 5432,
 });
 
 
 const getUsuarios = async (req, res) => {
-    const consulta = `select * from usuarios`;
+    const consulta = `select * from users`;
+  
     try {
-        const response = await pool.query(consulta);
-        console.log(response.rows);
-        res.status(200).json(response.rows);
+      const response = await pool.query(consulta);
+  
+      // Desencriptamos las contraseñas usando la clave privada
+      const p = 61; // Este valor debe ser el mismo que se usó para generar las claves RSA
+      const q = 53; // Este valor debe ser el mismo que se usó para generar las claves RSA
+      const { privateKey } = generateRSAKeys(p, q);
+      const usuarios = response.rows.map((usuario) => {
+        const { id_user, username, password, id_role } = usuario;
+        return {
+          id_user,
+          username,
+          password: decryptMessage(privateKey, password),
+          id_role,
+        };
+      });
+  
+      console.log(usuarios);
+      res.status(200).json(usuarios);
     } catch (e) {
-        console.log(e);
+      console.log(e);
+      res.status(500).json({ error: 'Error en el servidor' });
     }
-}
+  };
+  
 
 const NewUsuario = async (req, res) => {
-    const {usuario, contraseña, rol} = req.body;
-    const consulta = `insert into usuarios (usuario, contraseña, rol) values ('${usuario}', '${contraseña}', '${rol}')`;
-
+    const { username, password, id_role } = req.body;
+    
+    // Generamos las claves RSA (asumiendo que p y q son números primos grandes)
+    const p = 61;
+    const q = 53;
+    const { publicKey } = generateRSAKeys(p, q);
+  
     try {
-        const response = await pool.query(consulta);
-        console.log(response.rows);
-        res.status(200).json(response.rows);
+      // Encriptamos la contraseña usando la clave pública
+      const encryptedPass = encryptMessage(publicKey, password);
+  
+      const consulta = `insert into users (username, password, id_role) values ('${username}', '${encryptedPass}', '${id_role}')`;
+      const response = await pool.query(consulta);
+      
+      console.log(response.rows);
+      res.status(200).json(response.rows);
+    } catch (e) {
+      console.log(e);
+      console.log(encryptedPass);
+      res.status(500).json({ error: 'Error en el servidor' });
     }
-    catch (e) {
-        console.log(e);
-    }
-}
 
+  };
 
 module.exports = {
     getUsuarios,
